@@ -1,0 +1,31 @@
+# HotelMind Data Engineering — Python dependencies
+# Install: pip install -r requirements.txt
+
+# ── Config ────────────────────────────────────────────────────────────────────
+pydantic>=2.0,<3.0
+pydantic-settings>=2.0,<3.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+psycopg2-binary>=2.9,<3.0
+
+# ── Data Lake (S3 / MinIO) ────────────────────────────────────────────────────
+boto3>=1.34,<2.0
+botocore>=1.34,<2.0
+
+# ── Data Quality ─────────────────────────────────────────────────────────────
+great-expectations>=0.18,<1.0
+pandas>=2.0,<3.0
+
+# ── dbt ───────────────────────────────────────────────────────────────────────
+dbt-core>=1.8,<2.0
+dbt-postgres>=1.8,<2.0
+
+# ── Airflow ───────────────────────────────────────────────────────────────────
+# apache-airflow is NOT installed locally — it runs inside Docker only.
+# Adding it here conflicts with dbt-core, great-expectations, and pandas pins.
+# See: docker-compose.yml  image: apache/airflow:2.9.3-python3.12
+# To run DAGs locally: docker compose exec airflow-webserver airflow dags test <dag_id>
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest>=7.0,<9.0
+pytest-mock>=3.0,<4.0

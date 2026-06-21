@@ -1,0 +1,31 @@
+# Copy this file to profiles.yml (in the dbt/ folder) and fill in your values.
+# profiles.yml is git-ignored.
+#
+# dbt looks for profiles.yml in DBT_PROFILES_DIR (set in .env).
+
+hotelmind_data:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('WAREHOUSE_DB_HOST', 'localhost') }}"
+      port: "{{ env_var('WAREHOUSE_DB_PORT', '5433') | int }}"
+      dbname: "{{ env_var('WAREHOUSE_DB_NAME', 'hotelmind_warehouse') }}"
+      user: "{{ env_var('WAREHOUSE_DB_USER', 'hotelmind_dw') }}"
+      password: "{{ env_var('WAREHOUSE_DB_PASSWORD', 'hotelmind_dw_secret') }}"
+      schema: hotelmind_warehouse
+      threads: 4
+      keepalives_idle: 0
+      connect_timeout: 10
+
+    prod:
+      type: postgres
+      host: "{{ env_var('WAREHOUSE_DB_HOST') }}"
+      port: "{{ env_var('WAREHOUSE_DB_PORT') | int }}"
+      dbname: "{{ env_var('WAREHOUSE_DB_NAME') }}"
+      user: "{{ env_var('WAREHOUSE_DB_USER') }}"
+      password: "{{ env_var('WAREHOUSE_DB_PASSWORD') }}"
+      schema: hotelmind_warehouse
+      threads: 8
+      keepalives_idle: 0
+      connect_timeout: 10

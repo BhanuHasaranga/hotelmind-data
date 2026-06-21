@@ -1,0 +1,33 @@
+.env
+.env.local
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+*.log
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+dbt/profiles.yml
+
+# Great Expectations
+quality/uncommitted/
+quality/docs/
+
+# Airflow
+airflow/logs/
+airflow/plugins/
+
+# MinIO local data
+minio_data/
+
+# Node (for dbt docs server)
+node_modules/

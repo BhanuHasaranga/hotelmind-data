@@ -1,0 +1,254 @@
+version: 2
+
+sources:
+  - name: hotelmind_staging
+    schema: hotelmind_staging
+    description: "Mirror of the operational HotelMind database, loaded incrementally by the ETL pipeline."
+    tables:
+      - name: hotels
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: name
+            tests: [not_null]
+          - name: is_active
+            tests: [not_null]
+
+      - name: branches
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: hotel_id
+            tests: [not_null]
+          - name: name
+            tests: [not_null]
+
+      - name: floors
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: branch_id
+            tests: [not_null]
+
+      - name: room_types
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: branch_id
+            tests: [not_null]
+          - name: base_price
+            tests: [not_null]
+
+      - name: amenities
+        columns:
+          - name: id
+            tests: [not_null, unique]
+
+      - name: room_type_amenities
+        columns:
+          - name: room_type_id
+            tests: [not_null]
+          - name: amenity_id
+            tests: [not_null]
+
+      - name: rooms
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: floor_id
+            tests: [not_null]
+          - name: room_type_id
+            tests: [not_null]
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['AVAILABLE', 'OCCUPIED', 'MAINTENANCE', 'CLEANING']
+
+      - name: guests
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: email
+            tests: [not_null]
+
+      - name: reservations
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: room_id
+            tests: [not_null]
+          - name: guest_id
+            tests: [not_null]
+          - name: check_in_date
+            tests: [not_null]
+          - name: check_out_date
+            tests: [not_null]
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED', 'NO_SHOW']
+          - name: total_amount
+            tests: [not_null]
+
+      - name: occupancy_snapshots
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: branch_id
+            tests: [not_null]
+          - name: snapshot_date
+            tests: [not_null]
+
+      - name: food_categories
+        columns:
+          - name: id
+            tests: [not_null, unique]
+
+      - name: menu_items
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: price
+            tests: [not_null]
+
+      - name: restaurant_tables
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['AVAILABLE', 'OCCUPIED', 'RESERVED']
+
+      - name: restaurant_orders
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: branch_id
+            tests: [not_null]
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['OPEN', 'CLOSED', 'CANCELLED']
+
+      - name: order_items
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: order_id
+            tests: [not_null]
+          - name: quantity
+            tests: [not_null]
+
+      - name: departments
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: branch_id
+            tests: [not_null]
+
+      - name: employees
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: email
+            tests: [not_null]
+          - name: department_id
+            tests: [not_null]
+
+      - name: schedules
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: employee_id
+            tests: [not_null]
+
+      - name: attendance
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: employee_id
+            tests: [not_null]
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY']
+
+models:
+  - name: stg_hotels
+    description: "Staging model for hotels — cleaned and typed."
+    columns:
+      - name: hotel_id
+        tests: [not_null, unique]
+
+  - name: stg_branches
+    description: "Staging model for branches."
+    columns:
+      - name: branch_id
+        tests: [not_null, unique]
+
+  - name: stg_rooms
+    description: "Staging model for individual rooms."
+    columns:
+      - name: room_id
+        tests: [not_null, unique]
+
+  - name: stg_room_types
+    description: "Staging model for room types with pricing."
+    columns:
+      - name: room_type_id
+        tests: [not_null, unique]
+
+  - name: stg_guests
+    description: "Staging model for hotel guests."
+    columns:
+      - name: guest_id
+        tests: [not_null, unique]
+
+  - name: stg_reservations
+    description: "Staging model for reservations with computed nights."
+    columns:
+      - name: reservation_id
+        tests: [not_null, unique]
+
+  - name: stg_restaurant_orders
+    description: "Staging model for restaurant orders."
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+
+  - name: stg_order_items
+    description: "Staging model for individual order line items."
+    columns:
+      - name: order_item_id
+        tests: [not_null, unique]
+
+  - name: stg_menu_items
+    description: "Staging model for menu items."
+    columns:
+      - name: menu_item_id
+        tests: [not_null, unique]
+
+  - name: stg_employees
+    description: "Staging model for employees."
+    columns:
+      - name: employee_id
+        tests: [not_null, unique]
+
+  - name: stg_departments
+    description: "Staging model for departments."
+    columns:
+      - name: department_id
+        tests: [not_null, unique]
+
+  - name: stg_schedules
+    description: "Staging model for employee schedules."
+    columns:
+      - name: schedule_id
+        tests: [not_null, unique]
+
+  - name: stg_attendance
+    description: "Staging model for employee attendance with computed duration."
+    columns:
+      - name: attendance_id
+        tests: [not_null, unique]

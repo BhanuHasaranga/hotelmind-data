@@ -1,0 +1,66 @@
+name: hotelmind_data
+version: '1.0.0'
+config-version: 2
+
+profile: hotelmind_data
+
+model-paths: ["models"]
+seed-paths:  ["seeds"]
+test-paths:  ["tests"]
+macro-paths: ["macros"]
+
+target-path:  "target"
+clean-targets: ["target", "dbt_packages"]
+
+# ── Model configurations ───────────────────────────────────────────────────────
+models:
+  hotelmind_data:
+
+    staging:
+      +schema: hotelmind_staging
+      +materialized: view           # staging models are views — no storage cost
+      +tags: ["staging"]
+
+    warehouse:
+      dimensions:
+        +schema: hotelmind_warehouse
+        +materialized: table        # dimensions are tables for join performance
+        +tags: ["warehouse", "dimension"]
+      facts:
+        +schema: hotelmind_warehouse
+        +materialized: incremental  # facts use incremental loads
+        +unique_key: surrogate_key
+        +on_schema_change: append_new_columns
+        +tags: ["warehouse", "fact"]
+
+    marts:
+      +schema: hotelmind_warehouse
+      +materialized: table          # marts are pre-aggregated tables for BI + ML
+      +tags: ["mart"]
+
+# ── Seeds ─────────────────────────────────────────────────────────────────────
+seeds:
+  hotelmind_data:
+    seed_dim_date:
+      +schema: hotelmind_warehouse
+      +column_types:
+        date_key:  integer
+        date:      date
+        year:      integer
+        quarter:   integer
+        month:     integer
+        month_name: varchar
+        week:      integer
+        day_of_week: integer
+        day_name:  varchar
+        is_weekend: boolean
+        is_holiday: boolean
+
+# ── Variables ─────────────────────────────────────────────────────────────────
+vars:
+  # Date range for dim_date generation
+  dim_date_start: '2020-01-01'
+  dim_date_end:   '2030-12-31'
+
+  # Terminal reservation statuses — excluded from active calculations
+  terminal_statuses: ['CANCELLED', 'NO_SHOW']
