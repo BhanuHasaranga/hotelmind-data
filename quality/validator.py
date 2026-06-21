@@ -1,8 +1,8 @@
 """
 Data quality validator for HotelMind staging tables.
 
-Uses Great Expectations to validate data after staging load, before dbt runs.
-Runs programmatic (in-memory) expectations — no GE context file required.
+Runs SQL-based assertions against staging tables before dbt transforms.
+No external dependency on Great Expectations — plain psycopg2 checks.
 
 Usage:
     from quality.validator import run_staging_validation
@@ -14,8 +14,6 @@ Usage:
 import logging
 from dataclasses import dataclass, field
 
-import great_expectations as gx
-import pandas as pd
 import psycopg2
 
 from config.constants import STAGING_SCHEMA
@@ -44,126 +42,79 @@ class ValidationSummary:
         return [r.suite_name for r in self.results if not r.passed]
 
 
-def _load_table(conn: psycopg2.extensions.connection, table: str) -> pd.DataFrame:
-    return pd.read_sql(f"SELECT * FROM {STAGING_SCHEMA}.{table}", conn)
+def _run_checks(
+    conn: psycopg2.extensions.connection,
+    suite_name: str,
+    checks: list[tuple[str, str]],
+) -> ValidationResult:
+    """Run a list of (label, sql) checks. SQL must return a single boolean row."""
+    cur = conn.cursor()
+    failed: list[str] = []
+    for label, sql in checks:
+        cur.execute(sql)
+        row = cur.fetchone()
+        passed = bool(row[0]) if row else False
+        if not passed:
+            log.warning("  FAIL [%s] %s", suite_name, label)
+            failed.append(label)
+        else:
+            log.debug("  PASS [%s] %s", suite_name, label)
+    cur.close()
 
-
-def _validate_reservations(df: pd.DataFrame) -> ValidationResult:
-    """Validate staging reservations table."""
-    context = gx.get_context(mode="ephemeral")
-    ds = context.data_sources.add_pandas("reservations_ds")
-    da = ds.add_dataframe_asset("reservations")
-    batch = da.add_batch_definition_whole_dataframe("reservations_batch")
-
-    suite_name = "staging_reservations"
-    suite = context.suites.add(gx.ExpectationSuite(name=suite_name))
-
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="id"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="room_id"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="guest_id"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="check_in_date"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="check_out_date"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="total_amount"))
-    suite.add_expectation(
-        gx.expectations.ExpectColumnValuesToBeInSet(
-            column="status",
-            value_set=["PENDING", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "CANCELLED", "NO_SHOW"],
-        )
-    )
-    suite.add_expectation(
-        gx.expectations.ExpectColumnValuesToBeBetween(
-            column="total_amount",
-            min_value=0,
-            mostly=0.99,  # allow 1% anomalies
-        )
-    )
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToBeUnique(column="id"))
-
-    vd = context.validation_definitions.add(
-        gx.ValidationDefinition(name=suite_name, data=batch, suite=suite)
-    )
-    results = vd.run(batch_parameters={"dataframe": df})
-    failed = [r["expectation_config"]["type"] for r in results.results if not r["success"]]
-
+    total = len(checks)
+    ok = total - len(failed)
     return ValidationResult(
         suite_name=suite_name,
-        passed=results.success,
+        passed=len(failed) == 0,
         failed_expectations=failed,
-        statistics=dict(results.statistics),
+        statistics={"evaluated_expectations": total, "successful_expectations": ok},
     )
 
 
-def _validate_orders(df: pd.DataFrame) -> ValidationResult:
-    """Validate staging restaurant_orders table."""
-    context = gx.get_context(mode="ephemeral")
-    ds = context.data_sources.add_pandas("orders_ds")
-    da = ds.add_dataframe_asset("orders")
-    batch = da.add_batch_definition_whole_dataframe("orders_batch")
-
-    suite_name = "staging_restaurant_orders"
-    suite = context.suites.add(gx.ExpectationSuite(name=suite_name))
-
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="id"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="branch_id"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="status"))
-    suite.add_expectation(
-        gx.expectations.ExpectColumnValuesToBeInSet(
-            column="status",
-            value_set=["OPEN", "CLOSED", "CANCELLED"],
-        )
-    )
-    suite.add_expectation(
-        gx.expectations.ExpectColumnValuesToBeBetween(
-            column="total_amount",
-            min_value=0,
-            mostly=0.99,
-        )
-    )
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToBeUnique(column="id"))
-
-    vd = context.validation_definitions.add(
-        gx.ValidationDefinition(name=suite_name, data=batch, suite=suite)
-    )
-    results = vd.run(batch_parameters={"dataframe": df})
-    failed = [r["expectation_config"]["type"] for r in results.results if not r["success"]]
-
-    return ValidationResult(
-        suite_name=suite_name,
-        passed=results.success,
-        failed_expectations=failed,
-        statistics=dict(results.statistics),
-    )
+def _validate_reservations(conn: psycopg2.extensions.connection) -> ValidationResult:
+    s = f"{STAGING_SCHEMA}.reservations"
+    checks = [
+        ("not_empty",             f"SELECT COUNT(*) > 0 FROM {s}"),
+        ("id_not_null",           f"SELECT COUNT(*) = 0 FROM {s} WHERE id IS NULL"),
+        ("room_id_not_null",      f"SELECT COUNT(*) = 0 FROM {s} WHERE room_id IS NULL"),
+        ("guest_id_not_null",     f"SELECT COUNT(*) = 0 FROM {s} WHERE guest_id IS NULL"),
+        ("check_in_not_null",     f"SELECT COUNT(*) = 0 FROM {s} WHERE check_in_date IS NULL"),
+        ("check_out_not_null",    f"SELECT COUNT(*) = 0 FROM {s} WHERE check_out_date IS NULL"),
+        ("total_amount_not_null", f"SELECT COUNT(*) = 0 FROM {s} WHERE total_amount IS NULL"),
+        ("status_valid",          f"SELECT COUNT(*) = 0 FROM {s} WHERE status NOT IN "
+                                  "('PENDING','CONFIRMED','CHECKED_IN','CHECKED_OUT','CANCELLED','NO_SHOW')"),
+        ("total_amount_gte_0",    f"SELECT COUNT(*) * 1.0 / NULLIF(COUNT(*),0) >= 0.99 FROM {s} WHERE total_amount >= 0"),
+        ("id_unique",             f"SELECT COUNT(*) = COUNT(DISTINCT id) FROM {s}"),
+    ]
+    return _run_checks(conn, "staging_reservations", checks)
 
 
-def _validate_employees(df: pd.DataFrame) -> ValidationResult:
-    """Validate staging employees table."""
-    context = gx.get_context(mode="ephemeral")
-    ds = context.data_sources.add_pandas("employees_ds")
-    da = ds.add_dataframe_asset("employees")
-    batch = da.add_batch_definition_whole_dataframe("employees_batch")
+def _validate_orders(conn: psycopg2.extensions.connection) -> ValidationResult:
+    s = f"{STAGING_SCHEMA}.restaurant_orders"
+    checks = [
+        ("not_empty",         f"SELECT COUNT(*) > 0 FROM {s}"),
+        ("id_not_null",       f"SELECT COUNT(*) = 0 FROM {s} WHERE id IS NULL"),
+        ("branch_id_not_null",f"SELECT COUNT(*) = 0 FROM {s} WHERE branch_id IS NULL"),
+        ("status_not_null",   f"SELECT COUNT(*) = 0 FROM {s} WHERE status IS NULL"),
+        ("status_valid",      f"SELECT COUNT(*) = 0 FROM {s} WHERE status NOT IN ('OPEN','CLOSED','CANCELLED')"),
+        ("total_gte_0",       f"SELECT COUNT(*) * 1.0 / NULLIF(COUNT(*),0) >= 0.99 FROM {s} WHERE total_amount >= 0"),
+        ("id_unique",         f"SELECT COUNT(*) = COUNT(DISTINCT id) FROM {s}"),
+    ]
+    return _run_checks(conn, "staging_restaurant_orders", checks)
 
-    suite_name = "staging_employees"
-    suite = context.suites.add(gx.ExpectationSuite(name=suite_name))
 
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="id"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="department_id"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="email"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="hire_date"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToBeUnique(column="id"))
-    suite.add_expectation(gx.expectations.ExpectColumnValuesToBeUnique(column="email"))
-
-    vd = context.validation_definitions.add(
-        gx.ValidationDefinition(name=suite_name, data=batch, suite=suite)
-    )
-    results = vd.run(batch_parameters={"dataframe": df})
-    failed = [r["expectation_config"]["type"] for r in results.results if not r["success"]]
-
-    return ValidationResult(
-        suite_name=suite_name,
-        passed=results.success,
-        failed_expectations=failed,
-        statistics=dict(results.statistics),
-    )
+def _validate_employees(conn: psycopg2.extensions.connection) -> ValidationResult:
+    s = f"{STAGING_SCHEMA}.employees"
+    checks = [
+        ("not_empty",           f"SELECT COUNT(*) > 0 FROM {s}"),
+        ("id_not_null",         f"SELECT COUNT(*) = 0 FROM {s} WHERE id IS NULL"),
+        ("department_not_null", f"SELECT COUNT(*) = 0 FROM {s} WHERE department_id IS NULL"),
+        ("email_not_null",      f"SELECT COUNT(*) = 0 FROM {s} WHERE email IS NULL"),
+        ("hire_date_not_null",  f"SELECT COUNT(*) = 0 FROM {s} WHERE hire_date IS NULL"),
+        ("id_unique",           f"SELECT COUNT(*) = COUNT(DISTINCT id) FROM {s}"),
+        ("email_unique",        f"SELECT COUNT(*) = COUNT(DISTINCT email) FROM {s}"),
+    ]
+    return _run_checks(conn, "staging_employees", checks)
 
 
 def run_staging_validation(conn: psycopg2.extensions.connection) -> ValidationSummary:
@@ -175,28 +126,15 @@ def run_staging_validation(conn: psycopg2.extensions.connection) -> ValidationSu
     summary = ValidationSummary()
 
     validators = [
-        ("reservations",       _validate_reservations),
-        ("restaurant_orders",  _validate_orders),
-        ("employees",          _validate_employees),
+        ("staging_reservations",     _validate_reservations),
+        ("staging_restaurant_orders",_validate_orders),
+        ("staging_employees",        _validate_employees),
     ]
 
-    for table_name, validate_fn in validators:
+    for suite_name, validate_fn in validators:
         try:
-            df = _load_table(conn, table_name)
-            if df.empty:
-                log.warning("Quality FAIL: '%s' is empty — no rows extracted", table_name)
-                summary.results.append(
-                    ValidationResult(
-                        suite_name=f"staging_{table_name}",
-                        passed=False,
-                        failed_expectations=["table_is_empty"],
-                    )
-                )
-                continue
-
-            result = validate_fn(df)
+            result = validate_fn(conn)
             summary.results.append(result)
-
             if result.passed:
                 log.info("Quality PASS: %s  (%s)", result.suite_name, result.statistics)
             else:
@@ -206,9 +144,9 @@ def run_staging_validation(conn: psycopg2.extensions.connection) -> ValidationSu
                     result.failed_expectations,
                 )
         except Exception as exc:
-            log.error("Validation error for '%s': %s", table_name, exc, exc_info=True)
+            log.error("Validation error for '%s': %s", suite_name, exc, exc_info=True)
             summary.results.append(
-                ValidationResult(suite_name=f"staging_{table_name}", passed=False, failed_expectations=[str(exc)])
+                ValidationResult(suite_name=suite_name, passed=False, failed_expectations=[str(exc)])
             )
 
     log.info(

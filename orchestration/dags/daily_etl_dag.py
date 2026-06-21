@@ -25,7 +25,7 @@ import logging
 import os
 import pathlib
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -69,7 +69,7 @@ def _warehouse_conn() -> psycopg2.extensions.connection:
 
 def _json_serialize(obj: object) -> str:
     """JSON serializer for types not handled by default encoder."""
-    if isinstance(obj, datetime):
+    if isinstance(obj, (datetime, date, time)):
         return obj.isoformat()
     if isinstance(obj, Decimal):
         return str(obj)

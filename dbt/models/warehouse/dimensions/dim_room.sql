@@ -17,7 +17,7 @@ room_types as (
 ),
 
 floors as (
-    select floor_id, branch_id, floor_number
+    select id as floor_id, branch_id, floor_number
     from {{ source('hotelmind_staging', 'floors') }}
 ),
 
